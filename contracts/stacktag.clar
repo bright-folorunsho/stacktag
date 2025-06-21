@@ -338,3 +338,95 @@
     (ok true)
   )
 )
+
+;; Endorsement System
+(define-public (endorse-user 
+  (endorsed-user principal) 
+  (skill-category (string-ascii 32)) 
+  (message (string-utf8 256)))
+  (let
+    (
+      (current-endorsement-id (var-get next-endorsement-id))
+      (current-time (get-current-time))
+      (endorser-data (unwrap! (get-user tx-sender) err-not-found))
+      (endorsed-data (unwrap! (get-user endorsed-user) err-not-found))
+      (endorser-reputation (get reputation-score endorser-data))
+    )
+    (asserts! (not (is-eq tx-sender endorsed-user)) err-self-endorsement)
+    (asserts! (>= endorser-reputation u50) err-insufficient-reputation)
+    (asserts! (not (has-endorsed-user tx-sender endorsed-user)) err-already-endorsed)
+    (asserts! (> (len skill-category) u0) err-invalid-input)
+    
+    (let
+      (
+        (reputation-weight (calculate-endorsement-weight endorser-reputation))
+      )
+      ;; Create endorsement
+      (map-set endorsements
+        { endorsement-id: current-endorsement-id }
+        {
+          endorser: tx-sender,
+          endorsed: endorsed-user,
+          skill-category: skill-category,
+          message: message,
+          reputation-weight: reputation-weight,
+          timestamp: current-time,
+          is-active: true
+        }
+      )
+      
+      ;; Track user endorsement relationship
+      (map-set user-endorsements
+        { endorsed: endorsed-user, endorser: tx-sender }
+        { endorsement-id: current-endorsement-id }
+      )
+      
+      ;; Update endorsed user's reputation and stats
+      (map-set users
+        { user-address: endorsed-user }
+        (merge endorsed-data
+          {
+            reputation-score: (+ (get reputation-score endorsed-data) reputation-weight),
+            total-endorsements-received: (+ (get total-endorsements-received endorsed-data) u1)
+          }
+        )
+      )
+      
+      (var-set next-endorsement-id (+ current-endorsement-id u1))
+      (ok current-endorsement-id)
+    )
+  )
+)
+
+;; Admin Functions
+(define-public (verify-user (user-address principal))
+  (let
+    (
+      (user-data (unwrap! (get-user user-address) err-not-found))
+    )
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    
+    (map-set users
+      { user-address: user-address }
+      (merge user-data { is-verified: true })
+    )
+    (ok true)
+  )
+)
+
+(define-public (update-platform-fee (new-fee uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (<= new-fee u1000) err-invalid-input) ;; Max 10%
+    (var-set platform-fee new-fee)
+    (ok true)
+  )
+)
+
+(define-public (update-min-reputation-for-rewards (new-min uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (var-set min-reputation-for-rewards new-min)
+    (ok true)
+  )
+)
