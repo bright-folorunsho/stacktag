@@ -171,3 +171,93 @@
     min-reputation-for-rewards: (var-get min-reputation-for-rewards)
   }
 )
+
+;; Public Functions
+
+;; User Management
+(define-public (register-user (username (string-ascii 32)) (bio (string-utf8 256)))
+  (let
+    (
+      (current-user-id (var-get next-user-id))
+      (current-time (get-current-time))
+    )
+    (asserts! (is-none (get-user tx-sender)) err-already-exists)
+    (asserts! (> (len username) u0) err-invalid-input)
+    
+    (map-set users
+      { user-address: tx-sender }
+      {
+        user-id: current-user-id,
+        username: username,
+        bio: bio,
+        reputation-score: u50, ;; Starting reputation
+        total-posts: u0,
+        total-likes-received: u0,
+        total-endorsements-received: u0,
+        joined-at: current-time,
+        is-verified: false
+      }
+    )
+    
+    (map-set user-by-id
+      { user-id: current-user-id }
+      { user-address: tx-sender }
+    )
+    
+    (var-set next-user-id (+ current-user-id u1))
+    (ok current-user-id)
+  )
+)
+
+(define-public (update-profile (username (string-ascii 32)) (bio (string-utf8 256)))
+  (let
+    (
+      (user-data (unwrap! (get-user tx-sender) err-not-found))
+    )
+    (asserts! (> (len username) u0) err-invalid-input)
+    
+    (map-set users
+      { user-address: tx-sender }
+      (merge user-data { username: username, bio: bio })
+    )
+    (ok true)
+  )
+)
+
+;; Content Management
+(define-public (create-post (content (string-utf8 512)) (tags (list 5 (string-ascii 32))))
+  (let
+    (
+      (current-post-id (var-get next-post-id))
+      (current-time (get-current-time))
+      (user-data (unwrap! (get-user tx-sender) err-not-found))
+    )
+    (asserts! (> (len content) u0) err-invalid-input)
+    (asserts! (<= (len content) u512) err-invalid-input)
+    
+    ;; Create post
+    (map-set posts
+      { post-id: current-post-id }
+      {
+        author: tx-sender,
+        content: content,
+        timestamp: current-time,
+        likes: u0,
+        reposts: u0,
+        replies: u0,
+        reputation-earned: u0,
+        is-active: true,
+        tags: tags
+      }
+    )
+    
+    ;; Update user stats
+    (map-set users
+      { user-address: tx-sender }
+      (merge user-data { total-posts: (+ (get total-posts user-data) u1) })
+    )
+    
+    (var-set next-post-id (+ current-post-id u1))
+    (ok current-post-id)
+  )
+)
