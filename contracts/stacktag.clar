@@ -127,6 +127,34 @@
   )
 )
 
+(define-private (is-valid-string-ascii (input (string-ascii 32)))
+  (and (> (len input) u0) (<= (len input) u32))
+)
+
+(define-private (is-valid-string-utf8-256 (input (string-utf8 256)))
+  (<= (len input) u256)
+)
+
+(define-private (is-valid-string-utf8-512 (input (string-utf8 512)))
+  (and (> (len input) u0) (<= (len input) u512))
+)
+
+(define-private (is-valid-tag-list (tags (list 5 (string-ascii 32))))
+  (fold check-tag-validity tags true)
+)
+
+(define-private (check-tag-validity (tag (string-ascii 32)) (acc bool))
+  (and acc (<= (len tag) u32))
+)
+
+(define-private (sanitize-bio (bio (string-utf8 256)))
+  (if (is-valid-string-utf8-256 bio) bio u"")
+)
+
+(define-private (sanitize-message (message (string-utf8 256)))
+  (if (is-valid-string-utf8-256 message) message u"")
+)
+
 ;; Read-only Functions
 (define-read-only (get-user (user-address principal))
   (map-get? users { user-address: user-address })
@@ -180,16 +208,18 @@
     (
       (current-user-id (var-get next-user-id))
       (current-time (get-current-time))
+      (sanitized-bio (sanitize-bio bio))
     )
     (asserts! (is-none (get-user tx-sender)) err-already-exists)
-    (asserts! (> (len username) u0) err-invalid-input)
+    (asserts! (is-valid-string-ascii username) err-invalid-input)
+    (asserts! (is-valid-string-utf8-256 bio) err-invalid-input)
     
     (map-set users
       { user-address: tx-sender }
       {
         user-id: current-user-id,
         username: username,
-        bio: bio,
+        bio: sanitized-bio,
         reputation-score: u50, ;; Starting reputation
         total-posts: u0,
         total-likes-received: u0,
@@ -213,12 +243,14 @@
   (let
     (
       (user-data (unwrap! (get-user tx-sender) err-not-found))
+      (sanitized-bio (sanitize-bio bio))
     )
-    (asserts! (> (len username) u0) err-invalid-input)
+    (asserts! (is-valid-string-ascii username) err-invalid-input)
+    (asserts! (is-valid-string-utf8-256 bio) err-invalid-input)
     
     (map-set users
       { user-address: tx-sender }
-      (merge user-data { username: username, bio: bio })
+      (merge user-data { username: username, bio: sanitized-bio })
     )
     (ok true)
   )
@@ -232,8 +264,8 @@
       (current-time (get-current-time))
       (user-data (unwrap! (get-user tx-sender) err-not-found))
     )
-    (asserts! (> (len content) u0) err-invalid-input)
-    (asserts! (<= (len content) u512) err-invalid-input)
+    (asserts! (is-valid-string-utf8-512 content) err-invalid-input)
+    (asserts! (is-valid-tag-list tags) err-invalid-input)
     
     ;; Create post
     (map-set posts
@@ -351,11 +383,13 @@
       (endorser-data (unwrap! (get-user tx-sender) err-not-found))
       (endorsed-data (unwrap! (get-user endorsed-user) err-not-found))
       (endorser-reputation (get reputation-score endorser-data))
+      (sanitized-message (sanitize-message message))
     )
     (asserts! (not (is-eq tx-sender endorsed-user)) err-self-endorsement)
     (asserts! (>= endorser-reputation u50) err-insufficient-reputation)
     (asserts! (not (has-endorsed-user tx-sender endorsed-user)) err-already-endorsed)
-    (asserts! (> (len skill-category) u0) err-invalid-input)
+    (asserts! (is-valid-string-ascii skill-category) err-invalid-input)
+    (asserts! (is-valid-string-utf8-256 message) err-invalid-input)
     
     (let
       (
@@ -368,7 +402,7 @@
           endorser: tx-sender,
           endorsed: endorsed-user,
           skill-category: skill-category,
-          message: message,
+          message: sanitized-message,
           reputation-weight: reputation-weight,
           timestamp: current-time,
           is-active: true
@@ -426,6 +460,7 @@
 (define-public (update-min-reputation-for-rewards (new-min uint))
   (begin
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (<= new-min u10000) err-invalid-input) ;; Reasonable max limit
     (var-set min-reputation-for-rewards new-min)
     (ok true)
   )
