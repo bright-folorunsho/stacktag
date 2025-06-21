@@ -261,3 +261,80 @@
     (ok current-post-id)
   )
 )
+
+(define-public (like-post (post-id uint))
+  (let
+    (
+      (post-data (unwrap! (get-post post-id) err-not-found))
+      (current-time (get-current-time))
+      (author (get author post-data))
+      (author-data (unwrap! (get-user author) err-not-found))
+    )
+    (asserts! (get is-active post-data) err-not-found)
+    (asserts! (not (has-liked-post post-id tx-sender)) err-already-exists)
+    (asserts! (not (is-eq tx-sender author)) err-self-endorsement)
+    
+    ;; Record the like
+    (map-set post-likes
+      { post-id: post-id, liker: tx-sender }
+      { timestamp: current-time }
+    )
+    
+    ;; Update post stats
+    (let
+      (
+        (new-likes (+ (get likes post-data) u1))
+        (reputation-reward (calculate-reputation-reward new-likes (get reputation-score author-data)))
+      )
+      (map-set posts
+        { post-id: post-id }
+        (merge post-data 
+          { 
+            likes: new-likes,
+            reputation-earned: (+ (get reputation-earned post-data) reputation-reward)
+          }
+        )
+      )
+      
+      ;; Update author's reputation and stats
+      (map-set users
+        { user-address: author }
+        (merge author-data 
+          {
+            reputation-score: (+ (get reputation-score author-data) reputation-reward),
+            total-likes-received: (+ (get total-likes-received author-data) u1)
+          }
+        )
+      )
+    )
+    
+    (ok true)
+  )
+)
+
+(define-public (repost (post-id uint) (original-post-id uint))
+  (let
+    (
+      (post-data (unwrap! (get-post post-id) err-not-found))
+      (original-post-data (unwrap! (get-post original-post-id) err-not-found))
+      (current-time (get-current-time))
+    )
+    (asserts! (get is-active post-data) err-not-found)
+    (asserts! (get is-active original-post-data) err-not-found)
+    (asserts! (not (is-eq tx-sender (get author post-data))) err-self-endorsement)
+    
+    ;; Record the repost
+    (map-set post-reposts
+      { post-id: post-id, reposter: tx-sender }
+      { timestamp: current-time, original-post-id: original-post-id }
+    )
+    
+    ;; Update post stats
+    (map-set posts
+      { post-id: post-id }
+      (merge post-data { reposts: (+ (get reposts post-data) u1) })
+    )
+    
+    (ok true)
+  )
+)
