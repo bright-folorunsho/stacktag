@@ -430,3 +430,34 @@
     (ok true)
   )
 )
+
+;; Emergency Functions
+(define-public (deactivate-post (post-id uint))
+  (let
+    (
+      (post-data (unwrap! (get-post post-id) err-not-found))
+    )
+    (asserts! (or (is-eq tx-sender contract-owner) (is-eq tx-sender (get author post-data))) err-unauthorized)
+    
+    (map-set posts
+      { post-id: post-id }
+      (merge post-data { is-active: false })
+    )
+    (ok true)
+  )
+)
+
+(define-public (deactivate-endorsement (endorsement-id uint))
+  (let
+    (
+      (endorsement-data (unwrap! (get-endorsement endorsement-id) err-not-found))
+    )
+    (asserts! (or (is-eq tx-sender contract-owner) (is-eq tx-sender (get endorser endorsement-data))) err-unauthorized)
+    
+    (map-set endorsements
+      { endorsement-id: endorsement-id }
+      (merge endorsement-data { is-active: false })
+    )
+    (ok true)
+  )
+)
