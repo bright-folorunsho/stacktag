@@ -88,3 +88,86 @@
   { endorsed: principal, endorser: principal }
   { endorsement-id: uint }
 )
+
+(define-map reputation-history
+  { user: principal, timestamp: uint }
+  {
+    action-type: (string-ascii 32),
+    reputation-change: int,
+    total-reputation: uint,
+    details: (string-utf8 128)
+  }
+)
+
+;; Helper Functions
+(define-private (get-current-time)
+  stacks-block-height
+)
+
+(define-private (calculate-reputation-reward (likes uint) (author-reputation uint))
+  (let
+    (
+      (base-reward (if (> likes u0) (+ u10 (* likes u2)) u0))
+      (reputation-multiplier (if (> author-reputation u500) u2 u1))
+    )
+    (* base-reward reputation-multiplier)
+  )
+)
+
+(define-private (calculate-endorsement-weight (endorser-reputation uint))
+  (if (>= endorser-reputation u1000)
+    u50
+    (if (>= endorser-reputation u500)
+      u30
+      (if (>= endorser-reputation u100)
+        u20
+        u10
+      )
+    )
+  )
+)
+
+;; Read-only Functions
+(define-read-only (get-user (user-address principal))
+  (map-get? users { user-address: user-address })
+)
+
+(define-read-only (get-user-by-id (user-id uint))
+  (match (map-get? user-by-id { user-id: user-id })
+    user-data (get-user (get user-address user-data))
+    none
+  )
+)
+
+(define-read-only (get-post (post-id uint))
+  (map-get? posts { post-id: post-id })
+)
+
+(define-read-only (get-endorsement (endorsement-id uint))
+  (map-get? endorsements { endorsement-id: endorsement-id })
+)
+
+(define-read-only (has-liked-post (post-id uint) (user principal))
+  (is-some (map-get? post-likes { post-id: post-id, liker: user }))
+)
+
+(define-read-only (has-endorsed-user (endorser principal) (endorsed principal))
+  (is-some (map-get? user-endorsements { endorsed: endorsed, endorser: endorser }))
+)
+
+(define-read-only (get-user-reputation (user-address principal))
+  (match (get-user user-address)
+    user-data (get reputation-score user-data)
+    u0
+  )
+)
+
+(define-read-only (get-platform-stats)
+  {
+    total-users: (- (var-get next-user-id) u1),
+    total-posts: (- (var-get next-post-id) u1),
+    total-endorsements: (- (var-get next-endorsement-id) u1),
+    platform-fee: (var-get platform-fee),
+    min-reputation-for-rewards: (var-get min-reputation-for-rewards)
+  }
+)
