@@ -155,6 +155,22 @@
   (if (is-valid-string-utf8-256 message) message u"")
 )
 
+(define-private (verify-user-internal (user-address principal) (user-data (tuple 
+  (user-id uint) 
+  (username (string-ascii 32))
+  (bio (string-utf8 256))
+  (reputation-score uint)
+  (total-posts uint)
+  (total-likes-received uint)
+  (total-endorsements-received uint)
+  (joined-at uint)
+  (is-verified bool))))
+  (map-set users
+    { user-address: user-address }
+    (merge user-data { is-verified: true })
+  )
+)
+
 ;; Read-only Functions
 (define-read-only (get-user (user-address principal))
   (map-get? users { user-address: user-address })
@@ -434,17 +450,15 @@
 
 ;; Admin Functions
 (define-public (verify-user (user-address principal))
-  (let
-    (
-      (user-data (unwrap! (get-user user-address) err-not-found))
-    )
+  (begin
     (asserts! (is-eq tx-sender contract-owner) err-owner-only)
-    
-    (map-set users
-      { user-address: user-address }
-      (merge user-data { is-verified: true })
+    (match (get-user user-address)
+      user-data (begin
+        (verify-user-internal user-address user-data)
+        (ok true)
+      )
+      err-not-found
     )
-    (ok true)
   )
 )
 
